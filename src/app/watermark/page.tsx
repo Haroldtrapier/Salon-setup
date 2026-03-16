@@ -1,25 +1,28 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { toBlobURL, fetchFile } from "@ffmpeg/util";
 import {
   Upload,
   Play,
   Download,
   Trash2,
   Plus,
-  Eye,
   Loader2,
   Film,
   Type,
   Image as ImageIcon,
   Move,
   Settings2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 type WatermarkMode = "remove" | "add" | "pipeline";
-type RemovalMethod = "delogo" | "blur" | "inpaint";
+type RemovalMethod = "delogo" | "blur";
 type WatermarkType = "text" | "image";
 type Position =
   | "top-left"
@@ -53,24 +56,74 @@ const positions: { value: Position; label: string }[] = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
+const OVERLAY_POSITION_MAP: Record<Position, string> = {
+  "top-left": "10:10",
+  "top-center": "(W-w)/2:10",
+  "top-right": "W-w-10:10",
+  center: "(W-w)/2:(H-h)/2",
+  "bottom-left": "10:H-h-10",
+  "bottom-center": "(W-w)/2:H-h-10",
+  "bottom-right": "W-w-10:H-h-10",
+};
+
 const removalMethods: { value: RemovalMethod; label: string; desc: string }[] =
   [
     {
       value: "delogo",
       label: "Delogo",
-      desc: "Fast FFmpeg filter, good for solid watermarks",
+      desc: "FFmpeg filter — good for solid-color watermarks",
     },
     {
       value: "blur",
       label: "Blur",
       desc: "Gaussian blur over the region",
     },
-    {
-      value: "inpaint",
-      label: "Inpaint",
-      desc: "AI-based fill, best quality but slower",
-    },
   ];
+
+function createTextWatermarkPNG(
+  text: string,
+  fontSize: number,
+  color: string,
+  opacity: number
+): Uint8Array {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const metrics = ctx.measureText(text);
+  const pad = 20;
+  canvas.width = Math.ceil(metrics.width) + pad * 2;
+  canvas.height = fontSize + pad * 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const colorMap: Record<string, string> = {
+    white: "255,255,255",
+    black: "0,0,0",
+    red: "255,0,0",
+    green: "0,255,0",
+    blue: "0,0,255",
+    yellow: "255,255,0",
+    gray: "128,128,128",
+    grey: "128,128,128",
+  };
+  const rgb = colorMap[color.toLowerCase()] || "255,255,255";
+
+  const shadowOffset = Math.max(1, Math.floor(fontSize / 20));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.fillStyle = `rgba(0,0,0,${opacity * 0.5})`;
+  ctx.fillText(text, pad + shadowOffset, pad + fontSize * 0.8 + shadowOffset);
+
+  ctx.fillStyle = `rgba(${rgb},${opacity})`;
+  ctx.fillText(text, pad, pad + fontSize * 0.8);
+
+  const dataUrl = canvas.toDataURL("image/png");
+  const binaryString = atob(dataUrl.split(",")[1]);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export default function WatermarkPage() {
   const [mode, setMode] = useState<WatermarkMode>("pipeline");
@@ -83,7 +136,12 @@ export default function WatermarkPage() {
     string | null
   >(null);
 
-  const [region, setRegion] = useState<Region>({ x: 10, y: 10, w: 200, h: 60 });
+  const [region, setRegion] = useState<Region>({
+    x: 10,
+    y: 10,
+    w: 200,
+    h: 60,
+  });
   const [removalMethod, setRemovalMethod] = useState<RemovalMethod>("delogo");
 
   const [watermarkType, setWatermarkType] = useState<WatermarkType>("text");
@@ -93,24 +151,74 @@ export default function WatermarkPage() {
   const [fontSize, setFontSize] = useState(36);
   const [textColor, setTextColor] = useState("white");
 
+  const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
+  const [ffmpegLoading, setFfmpegLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const ffmpegRef = useRef<FFmpeg | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const loadFFmpeg = useCallback(async () => {
+    if (ffmpegRef.current && ffmpegLoaded) return;
+    setFfmpegLoading(true);
+    setProgress("Loading FFmpeg engine...");
+
+    try {
+      const ffmpeg = new FFmpeg();
+      ffmpeg.on("log", ({ message }) => {
+        console.log("[ffmpeg]", message);
+      });
+      ffmpeg.on("progress", ({ progress: p }) => {
+        if (p > 0 && p <= 1) {
+          setProgress(`Processing... ${Math.round(p * 100)}%`);
+        }
+      });
+
+      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+      await ffmpeg.load({
+        coreURL: await toBlobURL(
+          `${baseURL}/ffmpeg-core.js`,
+          "text/javascript"
+        ),
+        wasmURL: await toBlobURL(
+          `${baseURL}/ffmpeg-core.wasm`,
+          "application/wasm"
+        ),
+      });
+
+      ffmpegRef.current = ffmpeg;
+      setFfmpegLoaded(true);
+    } catch (err) {
+      console.error("Failed to load FFmpeg:", err);
+      setError(
+        "Failed to load FFmpeg engine. Please make sure your browser supports WebAssembly."
+      );
+    } finally {
+      setFfmpegLoading(false);
+      setProgress("");
+    }
+  }, [ffmpegLoaded]);
+
+  useEffect(() => {
+    loadFFmpeg();
+  }, [loadFFmpeg]);
 
   const handleVideoSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setVideoFile(file);
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
       setVideoPreviewUrl(URL.createObjectURL(file));
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(null);
       setError(null);
     },
-    []
+    [videoPreviewUrl, resultUrl]
   );
 
   const handleWatermarkImageSelect = useCallback(
@@ -118,67 +226,139 @@ export default function WatermarkPage() {
       const file = e.target.files?.[0];
       if (!file) return;
       setWatermarkImageFile(file);
+      if (watermarkImagePreview) URL.revokeObjectURL(watermarkImagePreview);
       setWatermarkImagePreview(URL.createObjectURL(file));
     },
-    []
+    [watermarkImagePreview]
   );
 
   const handleProcess = async () => {
-    if (!videoFile) return;
+    if (!videoFile || !ffmpegRef.current) return;
+    const ffmpeg = ffmpegRef.current;
 
     setProcessing(true);
-    setProgress("Uploading video...");
+    setProgress("Reading video...");
     setError(null);
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
     setResultUrl(null);
 
-    const formData = new FormData();
-    formData.append("video", videoFile);
-    formData.append("mode", mode);
-
-    if (mode === "remove" || mode === "pipeline") {
-      formData.append("region", JSON.stringify(region));
-      formData.append("removalMethod", removalMethod);
-    }
-
-    if (mode === "add" || mode === "pipeline") {
-      formData.append("watermarkType", watermarkType);
-      formData.append("position", position);
-      formData.append("opacity", opacity.toString());
-
-      if (watermarkType === "text") {
-        formData.append("text", watermarkText);
-        formData.append("fontSize", fontSize.toString());
-        formData.append("color", textColor);
-      } else if (watermarkImageFile) {
-        formData.append("watermarkImage", watermarkImageFile);
-      }
-    }
-
     try {
-      setProgress("Processing video...");
-      const response = await fetch("/api/watermark", {
-        method: "POST",
-        body: formData,
-      });
+      const videoData = await fetchFile(videoFile);
+      await ffmpeg.writeFile("input.mp4", videoData);
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Processing failed");
+      if (mode === "remove" || mode === "pipeline") {
+        setProgress("Removing watermark...");
+        const { x, y, w, h } = region;
+
+        if (removalMethod === "delogo") {
+          await ffmpeg.exec([
+            "-i",
+            "input.mp4",
+            "-vf",
+            `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
+            "-c:a",
+            "copy",
+            "-preset",
+            "ultrafast",
+            "removed.mp4",
+          ]);
+        } else {
+          const sigma = 15;
+          await ffmpeg.exec([
+            "-i",
+            "input.mp4",
+            "-filter_complex",
+            `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
+            "-c:a",
+            "copy",
+            "-preset",
+            "ultrafast",
+            "removed.mp4",
+          ]);
+        }
+
+        if (mode === "remove") {
+          const data = await ffmpeg.readFile("removed.mp4");
+          const bytes = new Uint8Array(data as Uint8Array);
+          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
+          setResultUrl(URL.createObjectURL(blob));
+          setProgress("Done!");
+          setProcessing(false);
+          return;
+        }
+
+        await ffmpeg.deleteFile("input.mp4");
+        await ffmpeg.rename("removed.mp4", "input.mp4");
       }
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setResultUrl(url);
-      setProgress("Complete!");
+      if (mode === "add" || mode === "pipeline") {
+        setProgress("Adding watermark...");
+        const pos = OVERLAY_POSITION_MAP[position];
+
+        if (watermarkType === "text") {
+          const wmData = createTextWatermarkPNG(
+            watermarkText,
+            fontSize,
+            textColor,
+            opacity
+          );
+          await ffmpeg.writeFile("watermark.png", wmData);
+        } else if (watermarkImageFile) {
+          const wmData = await fetchFile(watermarkImageFile);
+          await ffmpeg.writeFile("watermark.png", wmData);
+        }
+
+        const opacityFilter =
+          watermarkType === "text"
+            ? ""
+            : `,colorchannelmixer=aa=${opacity}`;
+
+        await ffmpeg.exec([
+          "-i",
+          "input.mp4",
+          "-i",
+          "watermark.png",
+          "-filter_complex",
+          `[1:v]format=rgba${opacityFilter}[wm];[0:v][wm]overlay=${pos}[out]`,
+          "-map",
+          "[out]",
+          "-map",
+          "0:a?",
+          "-c:a",
+          "copy",
+          "-preset",
+          "ultrafast",
+          "-movflags",
+          "+faststart",
+          "output.mp4",
+        ]);
+
+        const data = await ffmpeg.readFile("output.mp4");
+        const bytes = new Uint8Array(data as Uint8Array);
+        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
+        setResultUrl(URL.createObjectURL(blob));
+        setProgress("Done!");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      console.error("Processing error:", err);
+      setError(
+        err instanceof Error ? err.message : "Processing failed. Try a shorter or smaller video."
+      );
     } finally {
       setProcessing(false);
+      try {
+        await ffmpeg.deleteFile("input.mp4").catch(() => {});
+        await ffmpeg.deleteFile("removed.mp4").catch(() => {});
+        await ffmpeg.deleteFile("output.mp4").catch(() => {});
+        await ffmpeg.deleteFile("watermark.png").catch(() => {});
+      } catch {
+        /* cleanup best effort */
+      }
     }
   };
 
   const canProcess = () => {
-    if (!videoFile) return false;
+    if (!videoFile || !ffmpegLoaded) return false;
     if (mode === "add" || mode === "pipeline") {
       if (watermarkType === "text" && !watermarkText.trim()) return false;
       if (watermarkType === "image" && !watermarkImageFile) return false;
@@ -203,9 +383,34 @@ export default function WatermarkPage() {
             </h1>
             <p className="mt-4 text-gray-500 text-lg max-w-xl mx-auto">
               Remove existing watermarks from your videos and add your own
-              custom branding. Powered by FFmpeg and OpenCV.
+              custom branding. Runs entirely in your browser — nothing is
+              uploaded to any server.
             </p>
           </motion.div>
+        </div>
+      </section>
+
+      {/* FFmpeg Status */}
+      <section className="pb-4">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          {ffmpegLoading && (
+            <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-5 py-3 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading FFmpeg engine (first load may take a moment)...
+            </div>
+          )}
+          {ffmpegLoaded && (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 text-sm">
+              <CheckCircle2 className="h-4 w-4" />
+              FFmpeg engine loaded — ready to process videos
+            </div>
+          )}
+          {error && !processing && !ffmpegLoading && !ffmpegLoaded && (
+            <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 text-sm">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
         </div>
       </section>
 
@@ -278,7 +483,10 @@ export default function WatermarkPage() {
                     <button
                       onClick={() => {
                         setVideoFile(null);
+                        if (videoPreviewUrl)
+                          URL.revokeObjectURL(videoPreviewUrl);
                         setVideoPreviewUrl(null);
+                        if (resultUrl) URL.revokeObjectURL(resultUrl);
                         setResultUrl(null);
                       }}
                       className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg transition-colors"
@@ -394,8 +602,9 @@ export default function WatermarkPage() {
                         ))}
                       </div>
                       <p className="text-xs text-gray-400 mt-2">
-                        Tip: Use the preview command to find coordinates. X,Y is
-                        the top-left corner. W,H is width and height.
+                        X,Y is the top-left corner of the watermark. W,H is its
+                        width and height in pixels. Tip: take a screenshot and
+                        measure in an image editor.
                       </p>
                     </div>
                   </div>
@@ -410,7 +619,6 @@ export default function WatermarkPage() {
                   </h3>
 
                   <div className="space-y-4">
-                    {/* Type Toggle */}
                     <div className="flex rounded-lg bg-gray-100 p-1">
                       <button
                         onClick={() => setWatermarkType("text")}
@@ -518,6 +726,8 @@ export default function WatermarkPage() {
                             <button
                               onClick={() => {
                                 setWatermarkImageFile(null);
+                                if (watermarkImagePreview)
+                                  URL.revokeObjectURL(watermarkImagePreview);
                                 setWatermarkImagePreview(null);
                               }}
                               className="absolute -top-2 -right-2 p-1 bg-black text-white rounded-full"
@@ -599,64 +809,25 @@ export default function WatermarkPage() {
                 )}
               </Button>
 
-              {error && (
+              {error && !ffmpegLoading && (
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">
                   {error}
                 </div>
               )}
+
+              {/* Info */}
+              <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-500 space-y-1">
+                <p>
+                  <strong>Privacy:</strong> All processing happens in your
+                  browser. Your video never leaves your device.
+                </p>
+                <p>
+                  <strong>Tip:</strong> For best performance, use shorter clips
+                  (under 2 minutes). Larger videos may take longer.
+                </p>
+              </div>
             </motion.div>
           </div>
-
-          {/* CLI Reference */}
-          <motion.div
-            {...fadeUp}
-            transition={{ delay: 0.4 }}
-            className="mt-16"
-          >
-            <div className="bg-gray-900 text-gray-100 rounded-2xl p-8">
-              <h3 className="font-semibold text-lg mb-1">
-                Command Line Tool
-              </h3>
-              <p className="text-gray-400 text-sm mb-6">
-                For batch processing or advanced usage, use the Python CLI tool
-                at{" "}
-                <code className="text-gray-300 bg-gray-800 px-1.5 py-0.5 rounded">
-                  tools/watermark/watermark_tool.py
-                </code>
-              </p>
-
-              <div className="space-y-4 font-mono text-sm">
-                <div>
-                  <p className="text-gray-500 mb-1">
-                    # Remove a watermark
-                  </p>
-                  <code className="text-green-400">
-                    python watermark_tool.py remove input.mp4 output.mp4
-                    --region 10 10 200 60 --method inpaint
-                  </code>
-                </div>
-                <div>
-                  <p className="text-gray-500 mb-1">
-                    # Add your text watermark
-                  </p>
-                  <code className="text-green-400">
-                    python watermark_tool.py add input.mp4 output.mp4 --text
-                    &quot;My Brand&quot; --position bottom-right --opacity 0.5
-                  </code>
-                </div>
-                <div>
-                  <p className="text-gray-500 mb-1">
-                    # Full pipeline: remove old, add new
-                  </p>
-                  <code className="text-green-400">
-                    python watermark_tool.py pipeline input.mp4 output.mp4
-                    --region 10 10 200 60 --text &quot;My Brand&quot; --position
-                    bottom-right
-                  </code>
-                </div>
-              </div>
-            </div>
-          </motion.div>
         </div>
       </section>
     </div>
