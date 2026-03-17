@@ -9,7 +9,6 @@ import { useCartStore } from "@/lib/store";
 const navigation = [
   { name: "Shop", href: "/shop" },
   { name: "Custom Fit", href: "/custom-fit" },
-  { name: "Watermark", href: "/watermark" },
   { name: "Book", href: "/book" },
   { name: "About", href: "/about" },
   { name: "FAQ", href: "/faq" },
