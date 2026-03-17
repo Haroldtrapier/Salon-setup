@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL, fetchFile } from "@ffmpeg/util";
 
-type WatermarkMode = "remove" | "add" | "pipeline";
-type RemovalMethod = "delogo" | "blur";
+type RemovalMethod = "delogo" | "blur" | "both";
 type WatermarkType = "text" | "image";
 type Position =
   | "top-left"
@@ -44,20 +43,6 @@ const OVERLAY_POSITION_MAP: Record<Position, string> = {
   "bottom-right": "W-w-10:H-h-10",
 };
 
-const removalMethods: { value: RemovalMethod; label: string; desc: string }[] =
-  [
-    {
-      value: "delogo",
-      label: "Delogo",
-      desc: "FFmpeg filter — good for solid-color watermarks",
-    },
-    {
-      value: "blur",
-      label: "Blur",
-      desc: "Gaussian blur over the region",
-    },
-  ];
-
 function createTextWatermarkPNG(
   text: string,
   fontSize: number,
@@ -71,7 +56,6 @@ function createTextWatermarkPNG(
   const pad = 20;
   canvas.width = Math.ceil(metrics.width) + pad * 2;
   canvas.height = fontSize + pad * 2;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const colorMap: Record<string, string> = {
@@ -82,53 +66,48 @@ function createTextWatermarkPNG(
     blue: "0,0,255",
     yellow: "255,255,0",
     gray: "128,128,128",
-    grey: "128,128,128",
   };
   const rgb = colorMap[color.toLowerCase()] || "255,255,255";
 
-  const shadowOffset = Math.max(1, Math.floor(fontSize / 20));
+  const shadow = Math.max(1, Math.floor(fontSize / 20));
   ctx.font = `bold ${fontSize}px sans-serif`;
   ctx.fillStyle = `rgba(0,0,0,${opacity * 0.5})`;
-  ctx.fillText(text, pad + shadowOffset, pad + fontSize * 0.8 + shadowOffset);
-
+  ctx.fillText(text, pad + shadow, pad + fontSize * 0.8 + shadow);
   ctx.fillStyle = `rgba(${rgb},${opacity})`;
   ctx.fillText(text, pad, pad + fontSize * 0.8);
 
   const dataUrl = canvas.toDataURL("image/png");
-  const binaryString = atob(dataUrl.split(",")[1]);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  const bin = atob(dataUrl.split(",")[1]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
 
 export default function WatermarkPage() {
-  const [mode, setMode] = useState<WatermarkMode>("pipeline");
+  // Video
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
-  const [watermarkImageFile, setWatermarkImageFile] = useState<File | null>(
-    null
-  );
-  const [watermarkImagePreview, setWatermarkImagePreview] = useState<
-    string | null
-  >(null);
+  const [videoDimensions, setVideoDimensions] = useState({ w: 0, h: 0 });
 
-  const [region, setRegion] = useState<Region>({
-    x: 10,
-    y: 10,
-    w: 200,
-    h: 60,
-  });
-  const [removalMethod, setRemovalMethod] = useState<RemovalMethod>("delogo");
+  // Old watermark
+  const [oldWatermarkText, setOldWatermarkText] = useState("");
+  const [region, setRegion] = useState<Region>({ x: 0, y: 0, w: 0, h: 0 });
+  const [removalMethod, setRemovalMethod] = useState<RemovalMethod>("both");
+  const [frameImageUrl, setFrameImageUrl] = useState<string | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
 
+  // New watermark
   const [watermarkType, setWatermarkType] = useState<WatermarkType>("text");
   const [watermarkText, setWatermarkText] = useState("");
+  const [watermarkImageFile, setWatermarkImageFile] = useState<File | null>(null);
+  const [watermarkImagePreview, setWatermarkImagePreview] = useState<string | null>(null);
   const [position, setPosition] = useState<Position>("bottom-right");
   const [opacity, setOpacity] = useState(0.5);
   const [fontSize, setFontSize] = useState(36);
   const [textColor, setTextColor] = useState("white");
 
+  // State
   const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
   const [ffmpegLoading, setFfmpegLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -139,7 +118,10 @@ export default function WatermarkPage() {
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const frameCanvasRef = useRef<HTMLCanvasElement>(null);
+  const frameContainerRef = useRef<HTMLDivElement>(null);
 
+  // ── FFmpeg Loading ──
   const loadFFmpeg = useCallback(async () => {
     if (ffmpegRef.current && ffmpegLoaded) return;
     setFfmpegLoading(true);
@@ -147,44 +129,54 @@ export default function WatermarkPage() {
 
     try {
       const ffmpeg = new FFmpeg();
-      ffmpeg.on("log", ({ message }) => {
-        console.log("[ffmpeg]", message);
-      });
+      ffmpeg.on("log", ({ message }) => console.log("[ffmpeg]", message));
       ffmpeg.on("progress", ({ progress: p }) => {
-        if (p > 0 && p <= 1) {
-          setProgress(`Processing... ${Math.round(p * 100)}%`);
-        }
+        if (p > 0 && p <= 1) setProgress(`Processing... ${Math.round(p * 100)}%`);
       });
 
       const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
       await ffmpeg.load({
-        coreURL: await toBlobURL(
-          `${baseURL}/ffmpeg-core.js`,
-          "text/javascript"
-        ),
-        wasmURL: await toBlobURL(
-          `${baseURL}/ffmpeg-core.wasm`,
-          "application/wasm"
-        ),
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
       });
 
       ffmpegRef.current = ffmpeg;
       setFfmpegLoaded(true);
     } catch (err) {
       console.error("Failed to load FFmpeg:", err);
-      setError(
-        "Failed to load the video engine. Click Retry or refresh the page."
-      );
+      setError("Failed to load the video engine. Click Retry or refresh the page.");
     } finally {
       setFfmpegLoading(false);
       setProgress("");
     }
   }, [ffmpegLoaded]);
 
-  useEffect(() => {
-    loadFFmpeg();
-  }, [loadFFmpeg]);
+  useEffect(() => { loadFFmpeg(); }, [loadFFmpeg]);
 
+  // ── Extract first frame for region selection ──
+  const extractFrame = useCallback((file: File) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.src = url;
+
+    video.addEventListener("loadeddata", () => {
+      video.currentTime = 0.5;
+    });
+
+    video.addEventListener("seeked", () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      setVideoDimensions({ w: video.videoWidth, h: video.videoHeight });
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(video, 0, 0);
+      setFrameImageUrl(canvas.toDataURL("image/jpeg", 0.9));
+      URL.revokeObjectURL(url);
+    });
+  }, []);
+
+  // ── Video Upload ──
   const handleVideoSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -195,8 +187,10 @@ export default function WatermarkPage() {
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(null);
       setError(null);
+      setRegion({ x: 0, y: 0, w: 0, h: 0 });
+      extractFrame(file);
     },
-    [videoPreviewUrl, resultUrl]
+    [videoPreviewUrl, resultUrl, extractFrame]
   );
 
   const handleWatermarkImageSelect = useCallback(
@@ -210,6 +204,80 @@ export default function WatermarkPage() {
     [watermarkImagePreview]
   );
 
+  // ── Region Drawing on Frame ──
+  const getScaledCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = frameCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = videoDimensions.w / rect.width;
+    const scaleY = videoDimensions.h / rect.height;
+    return {
+      x: Math.round((e.clientX - rect.left) * scaleX),
+      y: Math.round((e.clientY - rect.top) * scaleY),
+    };
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const coords = getScaledCoords(e);
+    setDrawStart(coords);
+    setIsDrawing(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const coords = getScaledCoords(e);
+    const x = Math.min(drawStart.x, coords.x);
+    const y = Math.min(drawStart.y, coords.y);
+    const w = Math.abs(coords.x - drawStart.x);
+    const h = Math.abs(coords.y - drawStart.y);
+    setRegion({ x, y, w, h });
+    drawFrameWithRegion(x, y, w, h);
+  };
+
+  const handleMouseUp = () => {
+    setIsDrawing(false);
+  };
+
+  const drawFrameWithRegion = (x: number, y: number, w: number, h: number) => {
+    const canvas = frameCanvasRef.current;
+    if (!canvas || !frameImageUrl) return;
+    const ctx = canvas.getContext("2d")!;
+    const img = new Image();
+    img.src = frameImageUrl;
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      if (w > 0 && h > 0) {
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 4]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 0, 0, 0.15)";
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#ff0000";
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText(`Old Watermark Area (${w}x${h})`, x + 4, y - 8);
+      }
+    };
+  };
+
+  useEffect(() => {
+    if (frameImageUrl && frameCanvasRef.current) {
+      const img = new Image();
+      img.src = frameImageUrl;
+      img.onload = () => {
+        const canvas = frameCanvasRef.current!;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+      };
+    }
+  }, [frameImageUrl]);
+
+  // ── Processing ──
   const handleProcess = async () => {
     if (!videoFile || !ffmpegRef.current) return;
     const ffmpeg = ffmpegRef.current;
@@ -224,74 +292,78 @@ export default function WatermarkPage() {
       const videoData = await fetchFile(videoFile);
       await ffmpeg.writeFile("input.mp4", videoData);
 
-      if (mode === "remove" || mode === "pipeline") {
-        setProgress("Removing watermark...");
+      const hasRegion = region.w > 10 && region.h > 10;
+
+      // Step 1: Remove old watermark
+      if (hasRegion) {
+        setProgress("Removing old watermark...");
         const { x, y, w, h } = region;
 
         if (removalMethod === "delogo") {
           await ffmpeg.exec([
             "-i", "input.mp4",
             "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
-            "-c:a", "copy",
-            "-preset", "ultrafast",
-            "removed.mp4",
+            "-c:a", "copy", "-preset", "ultrafast",
+            "step1.mp4",
           ]);
-        } else {
-          const sigma = 15;
+        } else if (removalMethod === "blur") {
+          const sigma = 20;
           await ffmpeg.exec([
             "-i", "input.mp4",
             "-filter_complex",
             `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
-            "-c:a", "copy",
-            "-preset", "ultrafast",
-            "removed.mp4",
+            "-c:a", "copy", "-preset", "ultrafast",
+            "step1.mp4",
           ]);
-        }
-
-        if (mode === "remove") {
-          const data = await ffmpeg.readFile("removed.mp4");
-          const bytes = new Uint8Array(data as Uint8Array);
-          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
-          setResultUrl(URL.createObjectURL(blob));
-          setProgress("Done!");
-          setProcessing(false);
-          return;
+        } else {
+          // "both" — delogo first, then blur for thorough removal
+          await ffmpeg.exec([
+            "-i", "input.mp4",
+            "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
+            "-c:a", "copy", "-preset", "ultrafast",
+            "delogoed.mp4",
+          ]);
+          const sigma = 12;
+          await ffmpeg.exec([
+            "-i", "delogoed.mp4",
+            "-filter_complex",
+            `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
+            "-c:a", "copy", "-preset", "ultrafast",
+            "step1.mp4",
+          ]);
+          await ffmpeg.deleteFile("delogoed.mp4").catch(() => {});
         }
 
         await ffmpeg.deleteFile("input.mp4");
-        await ffmpeg.rename("removed.mp4", "input.mp4");
+        await ffmpeg.rename("step1.mp4", "input.mp4");
       }
 
-      if (mode === "add" || mode === "pipeline") {
-        setProgress("Adding watermark...");
+      // Step 2: Add new watermark
+      const hasNewWatermark =
+        (watermarkType === "text" && watermarkText.trim()) ||
+        (watermarkType === "image" && watermarkImageFile);
+
+      if (hasNewWatermark) {
+        setProgress("Adding your watermark...");
         const pos = OVERLAY_POSITION_MAP[position];
 
         if (watermarkType === "text") {
-          const wmData = createTextWatermarkPNG(
-            watermarkText,
-            fontSize,
-            textColor,
-            opacity
-          );
+          const wmData = createTextWatermarkPNG(watermarkText, fontSize, textColor, opacity);
           await ffmpeg.writeFile("watermark.png", wmData);
         } else if (watermarkImageFile) {
           const wmData = await fetchFile(watermarkImageFile);
           await ffmpeg.writeFile("watermark.png", wmData);
         }
 
-        const opacityFilter =
-          watermarkType === "text" ? "" : `,colorchannelmixer=aa=${opacity}`;
+        const opacityFilter = watermarkType === "text" ? "" : `,colorchannelmixer=aa=${opacity}`;
 
         await ffmpeg.exec([
           "-i", "input.mp4",
           "-i", "watermark.png",
           "-filter_complex",
           `[1:v]format=rgba${opacityFilter}[wm];[0:v][wm]overlay=${pos}[out]`,
-          "-map", "[out]",
-          "-map", "0:a?",
-          "-c:a", "copy",
-          "-preset", "ultrafast",
-          "-movflags", "+faststart",
+          "-map", "[out]", "-map", "0:a?",
+          "-c:a", "copy", "-preset", "ultrafast", "-movflags", "+faststart",
           "output.mp4",
         ]);
 
@@ -299,35 +371,37 @@ export default function WatermarkPage() {
         const bytes = new Uint8Array(data as Uint8Array);
         const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
         setResultUrl(URL.createObjectURL(blob));
-        setProgress("Done!");
+      } else {
+        // Only removal, no new watermark
+        const data = await ffmpeg.readFile("input.mp4");
+        const bytes = new Uint8Array(data as Uint8Array);
+        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
+        setResultUrl(URL.createObjectURL(blob));
       }
+
+      setProgress("Done!");
     } catch (err) {
       console.error("Processing error:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Processing failed. Try a shorter or smaller video."
-      );
+      setError(err instanceof Error ? err.message : "Processing failed. Try a shorter or smaller video.");
     } finally {
       setProcessing(false);
       try {
         await ffmpeg.deleteFile("input.mp4").catch(() => {});
-        await ffmpeg.deleteFile("removed.mp4").catch(() => {});
+        await ffmpeg.deleteFile("step1.mp4").catch(() => {});
+        await ffmpeg.deleteFile("delogoed.mp4").catch(() => {});
         await ffmpeg.deleteFile("output.mp4").catch(() => {});
         await ffmpeg.deleteFile("watermark.png").catch(() => {});
-      } catch {
-        /* cleanup */
-      }
+      } catch { /* cleanup */ }
     }
   };
 
   const canProcess = () => {
     if (!videoFile || !ffmpegLoaded) return false;
-    if (mode === "add" || mode === "pipeline") {
-      if (watermarkType === "text" && !watermarkText.trim()) return false;
-      if (watermarkType === "image" && !watermarkImageFile) return false;
-    }
-    return true;
+    const hasRegion = region.w > 10 && region.h > 10;
+    const hasNewWatermark =
+      (watermarkType === "text" && watermarkText.trim()) ||
+      (watermarkType === "image" && watermarkImageFile);
+    return hasRegion || hasNewWatermark;
   };
 
   const getButtonLabel = () => {
@@ -335,220 +409,210 @@ export default function WatermarkPage() {
     if (!ffmpegLoaded && ffmpegLoading) return "Loading FFmpeg engine...";
     if (!ffmpegLoaded) return "FFmpeg engine not loaded";
     if (!videoFile) return "Upload a video first";
-    if ((mode === "add" || mode === "pipeline") && watermarkType === "text" && !watermarkText.trim())
-      return "Enter watermark text";
-    if ((mode === "add" || mode === "pipeline") && watermarkType === "image" && !watermarkImageFile)
-      return "Upload a watermark image";
-    if (mode === "remove") return "Remove Watermark";
-    if (mode === "add") return "Add Watermark";
-    return "Remove & Add Watermark";
+    const hasRegion = region.w > 10 && region.h > 10;
+    const hasNewWatermark =
+      (watermarkType === "text" && watermarkText.trim()) ||
+      (watermarkType === "image" && watermarkImageFile);
+    if (!hasRegion && !hasNewWatermark) return "Select old watermark area or add a new watermark";
+    if (hasRegion && hasNewWatermark) return "Remove Old & Add New Watermark";
+    if (hasRegion) return "Remove Old Watermark";
+    return "Add New Watermark";
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
       {/* Hero */}
-      <section className="py-16 sm:py-20">
+      <section className="py-12 sm:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-full text-sm font-medium mb-6">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-2.625 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0 1 18 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 7.746 6 7.125v-1.5M4.875 8.25C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0 1 18 7.125v-1.5m1.125 2.625c-.621 0-1.125.504-1.125 1.125v1.5m2.625-2.625c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125M18 5.625v5.25M7.125 12h9.75m-9.75 0A1.125 1.125 0 0 1 6 10.875M7.125 12C6.504 12 6 12.504 6 13.125m0-2.25C6 11.496 5.496 12 4.875 12M18 10.875c0 .621-.504 1.125-1.125 1.125M18 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m-12 5.25v-5.25m0 5.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125m-12 0v-1.5c0-.621-.504-1.125-1.125-1.125M18 18.375v-5.25m0 5.25v-1.5c0-.621.504-1.125 1.125-1.125M18 13.125v1.5c0 .621.504 1.125 1.125 1.125M18 13.125c0-.621.504-1.125 1.125-1.125M6 13.125v1.5c0 .621-.504 1.125-1.125 1.125M6 13.125C6 12.504 5.496 12 4.875 12m-1.5 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 12 6 12.504 6 13.125M6 13.125v1.5" /></svg>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
               Video Watermark Tool
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight">
-              Remove & add
+              Remove & replace
               <br />
               <span className="text-gray-400">watermarks</span>
             </h1>
             <p className="mt-4 text-gray-500 text-lg max-w-xl mx-auto">
-              Remove existing watermarks from your videos and add your own
-              custom branding. Runs entirely in your browser — nothing is
-              uploaded to any server.
+              Select the old watermark on your video, remove it, and add your own.
+              Everything runs in your browser — nothing is uploaded.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Status Banner */}
+      {/* Status */}
       <section className="pb-4">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           {ffmpegLoading && (
             <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-5 py-3 text-sm">
               <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-              Loading FFmpeg engine (first load may take a moment)...
+              Loading video engine (first load may take a moment)...
             </div>
           )}
           {ffmpegLoaded && !processing && (
             <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 text-sm">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-              FFmpeg engine loaded — ready to process videos
+              Ready to process videos
             </div>
           )}
           {!ffmpegLoaded && !ffmpegLoading && error && (
             <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 text-sm">
-              <div className="flex items-center gap-3">
-                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
-                {error}
-              </div>
-              <button onClick={() => { setError(null); loadFFmpeg(); }} className="ml-4 px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-medium hover:bg-red-800 shrink-0">
-                Retry
-              </button>
+              <span>{error}</span>
+              <button onClick={() => { setError(null); loadFFmpeg(); }} className="ml-4 px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-medium hover:bg-red-800 shrink-0">Retry</button>
             </div>
           )}
         </div>
       </section>
 
-      {/* Main Tool */}
+      {/* Main */}
       <section className="pb-24">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          {/* Mode Selector */}
-          <div className="mb-8">
-            <div className="flex rounded-xl bg-gray-100 p-1 max-w-md mx-auto">
-              {([
-                { value: "remove" as const, label: "Remove" },
-                { value: "add" as const, label: "Add" },
-                { value: "pipeline" as const, label: "Both" },
-              ]).map((m) => (
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 space-y-8">
+
+          {/* Upload */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <h2 className="font-bold text-lg mb-4">Upload Video</h2>
+            {!videoPreviewUrl ? (
+              <button
+                onClick={() => videoInputRef.current?.click()}
+                className="w-full aspect-video max-h-64 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-3 hover:border-gray-400 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <svg className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+                <span className="text-sm text-gray-500 font-medium">Click to upload a video</span>
+                <span className="text-xs text-gray-400">MP4, MOV, AVI, WebM</span>
+              </button>
+            ) : (
+              <div className="relative">
+                <video src={videoPreviewUrl} className="w-full rounded-xl max-h-64 object-contain bg-black" controls muted />
                 <button
-                  key={m.value}
-                  onClick={() => setMode(m.value)}
-                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
-                    mode === m.value
-                      ? "bg-white text-black shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
+                  onClick={() => {
+                    setVideoFile(null);
+                    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+                    setVideoPreviewUrl(null);
+                    setFrameImageUrl(null);
+                    setRegion({ x: 0, y: 0, w: 0, h: 0 });
+                    if (resultUrl) URL.revokeObjectURL(resultUrl);
+                    setResultUrl(null);
+                  }}
+                  className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg"
                 >
-                  {m.label}
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                 </button>
-              ))}
-            </div>
+                {videoDimensions.w > 0 && (
+                  <span className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded-md">
+                    {videoDimensions.w} x {videoDimensions.h}
+                  </span>
+                )}
+              </div>
+            )}
+            <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoSelect} />
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Left Column */}
-            <div className="space-y-6">
-              {/* Video Upload */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <h3 className="font-semibold text-sm uppercase tracking-wider text-gray-400 mb-4">
-                  Input Video
-                </h3>
-                {!videoPreviewUrl ? (
-                  <button
-                    onClick={() => videoInputRef.current?.click()}
-                    className="w-full aspect-video rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-3 hover:border-gray-400 hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
-                    <span className="text-sm text-gray-500">Click to upload a video</span>
-                    <span className="text-xs text-gray-400">MP4, MOV, AVI, WebM</span>
-                  </button>
-                ) : (
-                  <div className="relative">
-                    <video src={videoPreviewUrl} className="w-full rounded-xl" controls muted />
-                    <button
-                      onClick={() => {
-                        setVideoFile(null);
-                        if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
-                        setVideoPreviewUrl(null);
-                        if (resultUrl) URL.revokeObjectURL(resultUrl);
-                        setResultUrl(null);
-                      }}
-                      className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg transition-colors"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                    </button>
+          {videoFile && (
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* ── STEP 1: Old Watermark ── */}
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-full bg-red-100 text-red-700 text-sm font-bold">1</span>
+                    <h2 className="font-bold text-lg">Old Watermark to Remove</h2>
                   </div>
-                )}
-                <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoSelect} />
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        What does the old watermark say?
+                      </label>
+                      <input
+                        type="text"
+                        value={oldWatermarkText}
+                        onChange={(e) => setOldWatermarkText(e.target.value)}
+                        placeholder="e.g. StockFootage.com, Shutterstock, etc."
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">For your reference — helps you identify it on the frame below.</p>
+                    </div>
+
+                    {frameImageUrl && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Draw a box around the old watermark
+                        </label>
+                        <div ref={frameContainerRef} className="relative rounded-xl overflow-hidden border-2 border-gray-200 cursor-crosshair">
+                          <canvas
+                            ref={frameCanvasRef}
+                            className="w-full h-auto"
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">
+                          Click and drag on the image above to select the watermark area. The red box shows what will be removed.
+                        </p>
+                      </div>
+                    )}
+
+                    {region.w > 10 && region.h > 10 && (
+                      <>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-600 font-medium">Selected region:</span>
+                          <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                            x={region.x} y={region.y} w={region.w} h={region.h}
+                          </span>
+                          <button
+                            onClick={() => { setRegion({ x: 0, y: 0, w: 0, h: 0 }); if (frameImageUrl) drawFrameWithRegion(0, 0, 0, 0); }}
+                            className="text-xs text-red-500 hover:text-red-700 underline ml-auto"
+                          >
+                            Clear
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Removal Method</label>
+                          <div className="space-y-2">
+                            {([
+                              { value: "both" as const, label: "Delogo + Blur (recommended)", desc: "Two-pass removal for thorough cleaning" },
+                              { value: "delogo" as const, label: "Delogo only", desc: "Fast, good for simple watermarks" },
+                              { value: "blur" as const, label: "Blur only", desc: "Heavy blur over the area" },
+                            ]).map((m) => (
+                              <label key={m.value} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${removalMethod === m.value ? "border-black bg-gray-50" : "border-gray-200 hover:border-gray-300"}`}>
+                                <input type="radio" name="removalMethod" value={m.value} checked={removalMethod === m.value} onChange={() => setRemovalMethod(m.value)} className="mt-0.5 accent-black" />
+                                <div>
+                                  <span className="text-sm font-medium">{m.label}</span>
+                                  <p className="text-xs text-gray-500">{m.desc}</p>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Result */}
-              {resultUrl && (
+              {/* ── STEP 2: New Watermark ── */}
+              <div className="space-y-6">
                 <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <h3 className="font-semibold text-sm uppercase tracking-wider text-gray-400 mb-4">
-                    Result
-                  </h3>
-                  <video src={resultUrl} className="w-full rounded-xl" controls />
-                  <a href={resultUrl} download="watermarked-video.mp4" className="mt-4 w-full inline-flex">
-                    <Button className="w-full">
-                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                      Download Result
-                    </Button>
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Settings */}
-            <div className="space-y-6">
-              {/* Removal Settings */}
-              {(mode === "remove" || mode === "pipeline") && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <h3 className="font-semibold text-sm uppercase tracking-wider text-gray-400 mb-4">
-                    Watermark Removal
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Removal Method</label>
-                      <div className="space-y-2">
-                        {removalMethods.map((m) => (
-                          <label
-                            key={m.value}
-                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                              removalMethod === m.value ? "border-black bg-gray-50" : "border-gray-200 hover:border-gray-300"
-                            }`}
-                          >
-                            <input type="radio" name="removalMethod" value={m.value} checked={removalMethod === m.value} onChange={() => setRemovalMethod(m.value)} className="mt-0.5 accent-black" />
-                            <div>
-                              <span className="text-sm font-medium">{m.label}</span>
-                              <p className="text-xs text-gray-500">{m.desc}</p>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Watermark Region (pixels)</label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {(["x", "y", "w", "h"] as const).map((key) => (
-                          <div key={key}>
-                            <label className="text-xs text-gray-400 uppercase">{key}</label>
-                            <input
-                              type="number"
-                              value={region[key]}
-                              onChange={(e) => setRegion({ ...region, [key]: parseInt(e.target.value) || 0 })}
-                              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-gray-400 mt-2">
-                        X,Y is the top-left corner of the watermark. W,H is its width and height. Take a screenshot and measure in an image editor.
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-full bg-green-100 text-green-700 text-sm font-bold">2</span>
+                    <h2 className="font-bold text-lg">Your New Watermark</h2>
                   </div>
-                </div>
-              )}
 
-              {/* Addition Settings */}
-              {(mode === "add" || mode === "pipeline") && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <h3 className="font-semibold text-sm uppercase tracking-wider text-gray-400 mb-4">
-                    Your Watermark
-                  </h3>
                   <div className="space-y-4">
                     <div className="flex rounded-lg bg-gray-100 p-1">
-                      <button onClick={() => setWatermarkType("text")} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${watermarkType === "text" ? "bg-white text-black shadow-sm" : "text-gray-500"}`}>
-                        Text
-                      </button>
-                      <button onClick={() => setWatermarkType("image")} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${watermarkType === "image" ? "bg-white text-black shadow-sm" : "text-gray-500"}`}>
-                        Image
-                      </button>
+                      <button onClick={() => setWatermarkType("text")} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${watermarkType === "text" ? "bg-white text-black shadow-sm" : "text-gray-500"}`}>Text</button>
+                      <button onClick={() => setWatermarkType("image")} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${watermarkType === "image" ? "bg-white text-black shadow-sm" : "text-gray-500"}`}>Image</button>
                     </div>
 
                     {watermarkType === "text" ? (
                       <>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Watermark Text</label>
-                          <input type="text" value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="Your Brand Name" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10" />
+                          <input type="text" value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="GovconCommandCenter.com" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10" />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -576,10 +640,7 @@ export default function WatermarkPage() {
                         ) : (
                           <div className="relative inline-block">
                             <img src={watermarkImagePreview} alt="Watermark" className="max-h-24 rounded-lg border border-gray-200" />
-                            <button
-                              onClick={() => { setWatermarkImageFile(null); if (watermarkImagePreview) URL.revokeObjectURL(watermarkImagePreview); setWatermarkImagePreview(null); }}
-                              className="absolute -top-2 -right-2 p-1 bg-black text-white rounded-full"
-                            >
+                            <button onClick={() => { setWatermarkImageFile(null); if (watermarkImagePreview) URL.revokeObjectURL(watermarkImagePreview); setWatermarkImagePreview(null); }} className="absolute -top-2 -right-2 p-1 bg-black text-white rounded-full">
                               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                             </button>
                           </div>
@@ -592,40 +653,53 @@ export default function WatermarkPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
                       <div className="grid grid-cols-3 gap-1.5">
                         {positions.map((p) => (
-                          <button key={p.value} onClick={() => setPosition(p.value)} className={`py-1.5 px-2 rounded-md text-xs font-medium transition-all ${position === p.value ? "bg-black text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                            {p.label}
-                          </button>
+                          <button key={p.value} onClick={() => setPosition(p.value)} className={`py-1.5 px-2 rounded-md text-xs font-medium transition-all ${position === p.value ? "bg-black text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{p.label}</button>
                         ))}
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Opacity: {Math.round(opacity * 100)}%
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Opacity: {Math.round(opacity * 100)}%</label>
                       <input type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} className="w-full accent-black" />
                     </div>
                   </div>
                 </div>
-              )}
-
-              {/* Process Button */}
-              <Button size="lg" className="w-full" disabled={!canProcess() || processing} onClick={handleProcess}>
-                {(processing || ffmpegLoading) && (
-                  <svg className="h-4 w-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                )}
-                {getButtonLabel()}
-              </Button>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error}</div>
-              )}
-
-              <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-500 space-y-1">
-                <p><strong>Privacy:</strong> All processing happens in your browser. Your video never leaves your device.</p>
-                <p><strong>Tip:</strong> For best performance, use shorter clips (under 2 minutes). Larger videos may take longer.</p>
               </div>
             </div>
+          )}
+
+          {/* Process Button */}
+          {videoFile && (
+            <Button size="lg" className="w-full" disabled={!canProcess() || processing} onClick={handleProcess}>
+              {(processing || ffmpegLoading) && (
+                <svg className="h-4 w-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              )}
+              {getButtonLabel()}
+            </Button>
+          )}
+
+          {error && ffmpegLoaded && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error}</div>
+          )}
+
+          {/* Result */}
+          {resultUrl && (
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h2 className="font-bold text-lg mb-4">Result</h2>
+              <video src={resultUrl} className="w-full rounded-xl" controls />
+              <a href={resultUrl} download="watermarked-video.mp4" className="mt-4 w-full inline-flex">
+                <Button className="w-full">
+                  <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                  Download Result
+                </Button>
+              </a>
+            </div>
+          )}
+
+          {/* Info */}
+          <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-500 space-y-1">
+            <p><strong>Privacy:</strong> All processing happens in your browser. Your video never leaves your device.</p>
+            <p><strong>Tip:</strong> For best results, draw the selection box tightly around the old watermark text. Use &quot;Delogo + Blur&quot; for thorough removal.</p>
           </div>
         </div>
       </section>
