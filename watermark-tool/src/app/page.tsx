@@ -91,7 +91,8 @@ export default function WatermarkPage() {
 
   // Old watermark
   const [oldWatermarkText, setOldWatermarkText] = useState("");
-  const [region, setRegion] = useState<Region>({ x: 0, y: 0, w: 0, h: 0 });
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [currentRegion, setCurrentRegion] = useState<Region | null>(null);
   const [removalMethod, setRemovalMethod] = useState<RemovalMethod>("both");
   const [frameImageUrl, setFrameImageUrl] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -187,7 +188,8 @@ export default function WatermarkPage() {
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(null);
       setError(null);
-      setRegion({ x: 0, y: 0, w: 0, h: 0 });
+      setRegions([]);
+      setCurrentRegion(null);
       extractFrame(file);
     },
     [videoPreviewUrl, resultUrl, extractFrame]
@@ -220,6 +222,7 @@ export default function WatermarkPage() {
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const coords = getScaledCoords(e);
     setDrawStart(coords);
+    setCurrentRegion(null);
     setIsDrawing(true);
   };
 
@@ -230,15 +233,33 @@ export default function WatermarkPage() {
     const y = Math.min(drawStart.y, coords.y);
     const w = Math.abs(coords.x - drawStart.x);
     const h = Math.abs(coords.y - drawStart.y);
-    setRegion({ x, y, w, h });
-    drawFrameWithRegion(x, y, w, h);
+    setCurrentRegion({ x, y, w, h });
+    drawAllRegions([...regions, { x, y, w, h }]);
   };
 
   const handleMouseUp = () => {
+    if (isDrawing && currentRegion && currentRegion.w > 10 && currentRegion.h > 10) {
+      setRegions((prev) => [...prev, currentRegion]);
+    }
+    setCurrentRegion(null);
     setIsDrawing(false);
   };
 
-  const drawFrameWithRegion = (x: number, y: number, w: number, h: number) => {
+  const removeRegion = (index: number) => {
+    const updated = regions.filter((_, i) => i !== index);
+    setRegions(updated);
+    drawAllRegions(updated);
+  };
+
+  const clearAllRegions = () => {
+    setRegions([]);
+    setCurrentRegion(null);
+    drawAllRegions([]);
+  };
+
+  const REGION_COLORS = ["#ff0000", "#ff8800", "#cc00ff", "#0088ff", "#00cc44"];
+
+  const drawAllRegions = (regionsToDraw: Region[]) => {
     const canvas = frameCanvasRef.current;
     if (!canvas || !frameImageUrl) return;
     const ctx = canvas.getContext("2d")!;
@@ -248,18 +269,21 @@ export default function WatermarkPage() {
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
-      if (w > 0 && h > 0) {
-        ctx.strokeStyle = "#ff0000";
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 4]);
-        ctx.strokeRect(x, y, w, h);
-        ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(255, 0, 0, 0.15)";
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = "#ff0000";
-        ctx.font = "bold 14px sans-serif";
-        ctx.fillText(`Old Watermark Area (${w}x${h})`, x + 4, y - 8);
-      }
+      regionsToDraw.forEach((r, i) => {
+        if (r.w > 0 && r.h > 0) {
+          const color = REGION_COLORS[i % REGION_COLORS.length];
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.setLineDash([8, 4]);
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.setLineDash([]);
+          ctx.fillStyle = color + "25";
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.fillStyle = color;
+          ctx.font = "bold 14px sans-serif";
+          ctx.fillText(`#${i + 1} (${r.w}x${r.h})`, r.x + 4, r.y - 8);
+        }
+      });
     };
   };
 
@@ -292,50 +316,51 @@ export default function WatermarkPage() {
       const videoData = await fetchFile(videoFile);
       await ffmpeg.writeFile("input.mp4", videoData);
 
-      const hasRegion = region.w > 10 && region.h > 10;
+      const hasRegions = regions.length > 0;
 
-      // Step 1: Remove old watermark
-      if (hasRegion) {
-        setProgress("Removing old watermark...");
-        const { x, y, w, h } = region;
+      // Step 1: Remove old watermarks (process each region)
+      if (hasRegions) {
+        for (let i = 0; i < regions.length; i++) {
+          const { x, y, w, h } = regions[i];
+          setProgress(`Removing watermark ${i + 1} of ${regions.length}...`);
 
-        if (removalMethod === "delogo") {
-          await ffmpeg.exec([
-            "-i", "input.mp4",
-            "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
-            "-c:a", "copy", "-preset", "ultrafast",
-            "step1.mp4",
-          ]);
-        } else if (removalMethod === "blur") {
-          const sigma = 20;
-          await ffmpeg.exec([
-            "-i", "input.mp4",
-            "-filter_complex",
-            `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
-            "-c:a", "copy", "-preset", "ultrafast",
-            "step1.mp4",
-          ]);
-        } else {
-          // "both" — delogo first, then blur for thorough removal
-          await ffmpeg.exec([
-            "-i", "input.mp4",
-            "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
-            "-c:a", "copy", "-preset", "ultrafast",
-            "delogoed.mp4",
-          ]);
-          const sigma = 12;
-          await ffmpeg.exec([
-            "-i", "delogoed.mp4",
-            "-filter_complex",
-            `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
-            "-c:a", "copy", "-preset", "ultrafast",
-            "step1.mp4",
-          ]);
-          await ffmpeg.deleteFile("delogoed.mp4").catch(() => {});
+          if (removalMethod === "delogo") {
+            await ffmpeg.exec([
+              "-i", "input.mp4",
+              "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
+              "-c:a", "copy", "-preset", "ultrafast",
+              "step_out.mp4",
+            ]);
+          } else if (removalMethod === "blur") {
+            const sigma = 20;
+            await ffmpeg.exec([
+              "-i", "input.mp4",
+              "-filter_complex",
+              `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
+              "-c:a", "copy", "-preset", "ultrafast",
+              "step_out.mp4",
+            ]);
+          } else {
+            await ffmpeg.exec([
+              "-i", "input.mp4",
+              "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`,
+              "-c:a", "copy", "-preset", "ultrafast",
+              "delogoed.mp4",
+            ]);
+            const sigma = 12;
+            await ffmpeg.exec([
+              "-i", "delogoed.mp4",
+              "-filter_complex",
+              `split[main][blur];[blur]crop=${w}:${h}:${x}:${y},gblur=sigma=${sigma}[blurred];[main][blurred]overlay=${x}:${y}`,
+              "-c:a", "copy", "-preset", "ultrafast",
+              "step_out.mp4",
+            ]);
+            await ffmpeg.deleteFile("delogoed.mp4").catch(() => {});
+          }
+
+          await ffmpeg.deleteFile("input.mp4");
+          await ffmpeg.rename("step_out.mp4", "input.mp4");
         }
-
-        await ffmpeg.deleteFile("input.mp4");
-        await ffmpeg.rename("step1.mp4", "input.mp4");
       }
 
       // Step 2: Add new watermark
@@ -387,7 +412,7 @@ export default function WatermarkPage() {
       setProcessing(false);
       try {
         await ffmpeg.deleteFile("input.mp4").catch(() => {});
-        await ffmpeg.deleteFile("step1.mp4").catch(() => {});
+        await ffmpeg.deleteFile("step_out.mp4").catch(() => {});
         await ffmpeg.deleteFile("delogoed.mp4").catch(() => {});
         await ffmpeg.deleteFile("output.mp4").catch(() => {});
         await ffmpeg.deleteFile("watermark.png").catch(() => {});
@@ -397,11 +422,11 @@ export default function WatermarkPage() {
 
   const canProcess = () => {
     if (!videoFile || !ffmpegLoaded) return false;
-    const hasRegion = region.w > 10 && region.h > 10;
+    const hasRegions = regions.length > 0;
     const hasNewWatermark =
       (watermarkType === "text" && watermarkText.trim()) ||
       (watermarkType === "image" && watermarkImageFile);
-    return hasRegion || hasNewWatermark;
+    return hasRegions || hasNewWatermark;
   };
 
   const getButtonLabel = () => {
@@ -409,13 +434,13 @@ export default function WatermarkPage() {
     if (!ffmpegLoaded && ffmpegLoading) return "Loading FFmpeg engine...";
     if (!ffmpegLoaded) return "FFmpeg engine not loaded";
     if (!videoFile) return "Upload a video first";
-    const hasRegion = region.w > 10 && region.h > 10;
+    const hasRegions = regions.length > 0;
     const hasNewWatermark =
       (watermarkType === "text" && watermarkText.trim()) ||
       (watermarkType === "image" && watermarkImageFile);
-    if (!hasRegion && !hasNewWatermark) return "Select old watermark area or add a new watermark";
-    if (hasRegion && hasNewWatermark) return "Remove Old & Add New Watermark";
-    if (hasRegion) return "Remove Old Watermark";
+    if (!hasRegions && !hasNewWatermark) return "Draw boxes around old watermarks or add a new one";
+    if (hasRegions && hasNewWatermark) return `Remove ${regions.length} Area${regions.length > 1 ? "s" : ""} & Add New Watermark`;
+    if (hasRegions) return `Remove ${regions.length} Watermark Area${regions.length > 1 ? "s" : ""}`;
     return "Add New Watermark";
   };
 
@@ -491,7 +516,8 @@ export default function WatermarkPage() {
                     if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
                     setVideoPreviewUrl(null);
                     setFrameImageUrl(null);
-                    setRegion({ x: 0, y: 0, w: 0, h: 0 });
+                    setRegions([]);
+                    setCurrentRegion(null);
                     if (resultUrl) URL.revokeObjectURL(resultUrl);
                     setResultUrl(null);
                   }}
@@ -555,19 +581,26 @@ export default function WatermarkPage() {
                       </div>
                     )}
 
-                    {region.w > 10 && region.h > 10 && (
+                    {regions.length > 0 && (
                       <>
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-green-600 font-medium">Selected region:</span>
-                          <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                            x={region.x} y={region.y} w={region.w} h={region.h}
-                          </span>
-                          <button
-                            onClick={() => { setRegion({ x: 0, y: 0, w: 0, h: 0 }); if (frameImageUrl) drawFrameWithRegion(0, 0, 0, 0); }}
-                            className="text-xs text-red-500 hover:text-red-700 underline ml-auto"
-                          >
-                            Clear
-                          </button>
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">Selected areas ({regions.length})</span>
+                            <button onClick={clearAllRegions} className="text-xs text-red-500 hover:text-red-700 underline">Clear all</button>
+                          </div>
+                          <div className="space-y-1.5">
+                            {regions.map((r, i) => (
+                              <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: REGION_COLORS[i % REGION_COLORS.length] }} />
+                                <span className="text-sm font-medium">Area {i + 1}</span>
+                                <span className="font-mono text-xs text-gray-500">{r.w}x{r.h} at ({r.x},{r.y})</span>
+                                <button onClick={() => removeRegion(i)} className="ml-auto text-gray-400 hover:text-red-500">
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2">Draw more boxes to select additional watermark areas.</p>
                         </div>
 
                         <div>
