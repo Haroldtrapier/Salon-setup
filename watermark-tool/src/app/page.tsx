@@ -143,7 +143,7 @@ export default function WatermarkPage() {
   const loadFFmpeg = useCallback(async () => {
     if (ffmpegRef.current && ffmpegLoaded) return;
     setFfmpegLoading(true);
-    setProgress("Loading FFmpeg engine...");
+    setError(null);
 
     try {
       const ffmpeg = new FFmpeg();
@@ -156,7 +156,7 @@ export default function WatermarkPage() {
         }
       });
 
-      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
       await ffmpeg.load({
         coreURL: await toBlobURL(
           `${baseURL}/ffmpeg-core.js`,
@@ -173,7 +173,7 @@ export default function WatermarkPage() {
     } catch (err) {
       console.error("Failed to load FFmpeg:", err);
       setError(
-        "Failed to load FFmpeg engine. Please make sure your browser supports WebAssembly."
+        "Failed to load the video engine. Click Retry or refresh the page."
       );
     } finally {
       setFfmpegLoading(false);
@@ -330,6 +330,20 @@ export default function WatermarkPage() {
     return true;
   };
 
+  const getButtonLabel = () => {
+    if (processing) return progress;
+    if (!ffmpegLoaded && ffmpegLoading) return "Loading FFmpeg engine...";
+    if (!ffmpegLoaded) return "FFmpeg engine not loaded";
+    if (!videoFile) return "Upload a video first";
+    if ((mode === "add" || mode === "pipeline") && watermarkType === "text" && !watermarkText.trim())
+      return "Enter watermark text";
+    if ((mode === "add" || mode === "pipeline") && watermarkType === "image" && !watermarkImageFile)
+      return "Upload a watermark image";
+    if (mode === "remove") return "Remove Watermark";
+    if (mode === "add") return "Add Watermark";
+    return "Remove & Add Watermark";
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
       {/* Hero */}
@@ -367,6 +381,17 @@ export default function WatermarkPage() {
             <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 text-sm">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
               FFmpeg engine loaded — ready to process videos
+            </div>
+          )}
+          {!ffmpegLoaded && !ffmpegLoading && error && (
+            <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 text-sm">
+              <div className="flex items-center gap-3">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+                {error}
+              </div>
+              <button onClick={() => { setError(null); loadFFmpeg(); }} className="ml-4 px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-medium hover:bg-red-800 shrink-0">
+                Retry
+              </button>
             </div>
           )}
         </div>
@@ -586,16 +611,10 @@ export default function WatermarkPage() {
 
               {/* Process Button */}
               <Button size="lg" className="w-full" disabled={!canProcess() || processing} onClick={handleProcess}>
-                {processing ? (
-                  <>
-                    <svg className="h-4 w-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    {progress}
-                  </>
-                ) : (
-                  <>
-                    {mode === "remove" ? "Remove Watermark" : mode === "add" ? "Add Watermark" : "Remove & Add Watermark"}
-                  </>
+                {(processing || ffmpegLoading) && (
+                  <svg className="h-4 w-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                 )}
+                {getButtonLabel()}
               </Button>
 
               {error && (
