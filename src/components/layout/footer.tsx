@@ -1,19 +1,25 @@
+"use client";
 import Link from "next/link";
 
-const footerLinks = {
+const links = {
   Shop: [
-    { name: "All Products", href: "/shop" },
-    { name: "Custom Fit", href: "/custom-fit" },
+    { name: "All Collections", href: "/shop" },
+    { name: "French Tips", href: "/shop" },
+    { name: "Ombre", href: "/shop" },
+    { name: "Bold & Artistic", href: "/shop" },
+  ],
+  Services: [
+    { name: "Custom Fit AI", href: "/custom-fit" },
     { name: "Book Appointment", href: "/book" },
+    { name: "FAQ", href: "/faq" },
   ],
   Company: [
-    { name: "About Us", href: "/about" },
+    { name: "About", href: "/about" },
     { name: "Contact", href: "/contact" },
-    { name: "FAQ", href: "/faq" },
   ],
   Legal: [
     { name: "Privacy Policy", href: "/privacy" },
-    { name: "Terms of Service", href: "/terms" },
+    { name: "Terms", href: "/terms" },
     { name: "Shipping", href: "/shipping" },
     { name: "Returns", href: "/returns" },
   ],
@@ -21,31 +27,31 @@ const footerLinks = {
 
 export function Footer() {
   return (
-    <footer className="bg-black text-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
+    <footer style={{ backgroundColor: "#080808", borderTop: "1px solid #1a1a1a" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "5rem 1.5rem 3rem" }}>
+        <div className="footer-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: "3rem", marginBottom: "4rem" }}>
+
+          {/* Brand */}
           <div>
-            <h3 className="text-lg font-bold tracking-tight mb-4">DNNB</h3>
-            <p className="text-xs text-gray-500 mb-1">Drip Nails & Beauty</p>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Premium custom-fit press-on nails crafted for your unique nail shape.
-              AI-powered beauty, redefined.
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", fontWeight: 600, color: "#f0ede8" }}>DNNB</span>
+              <span style={{ color: "#c9a96e" }}>.</span>
+            </Link>
+            <p style={{ marginTop: "1.25rem", fontSize: "0.875rem", color: "#555555", lineHeight: 1.8, maxWidth: 240 }}>
+              AI-powered custom-fit press-on nails. Crafted for your unique nail shape. No compromise.
             </p>
           </div>
 
-          {Object.entries(footerLinks).map(([category, links]) => (
-            <div key={category}>
-              <h4 className="text-sm font-semibold uppercase tracking-wider mb-4">
-                {category}
-              </h4>
-              <ul className="space-y-2">
-                {links.map((link) => (
-                  <li key={link.name}>
-                    <Link
-                      href={link.href}
-                      className="text-sm text-gray-400 hover:text-white transition-colors"
-                    >
-                      {link.name}
+          {/* Link columns */}
+          {Object.entries(links).map(([cat, items]) => (
+            <div key={cat}>
+              <p style={{ fontSize: "0.625rem", fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: "#444444", marginBottom: "1.25rem" }}>{cat}</p>
+              <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+                {items.map((l) => (
+                  <li key={l.name}>
+                    <Link href={l.href} className="footer-link"
+                      style={{ fontSize: "0.8125rem", color: "#666666", textDecoration: "none", transition: "color 0.2s" }}>
+                      {l.name}
                     </Link>
                   </li>
                 ))}
@@ -54,12 +60,16 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 pt-8 border-t border-gray-800 text-center">
-          <p className="text-sm text-gray-500">
-            &copy; {new Date().getFullYear()} Drip Nails & Beauty (DNNB) — Flax Enterprises LLC. All rights reserved.
-          </p>
+        <div style={{ borderTop: "1px solid #1a1a1a", paddingTop: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+          <p style={{ fontSize: "0.75rem", color: "#444444" }}>© 2026 Drip Nails & Beauty. All rights reserved.</p>
+          <p style={{ fontSize: "0.6875rem", color: "#333333", letterSpacing: "0.15em", textTransform: "uppercase" }}>Crafted with AI · Made for You</p>
         </div>
       </div>
+      <style>{`
+        .footer-link:hover { color: #c9a96e !important; }
+        @media (max-width: 900px) { .footer-grid { grid-template-columns: 1fr 1fr !important; } }
+        @media (max-width: 480px) { .footer-grid { grid-template-columns: 1fr !important; } }
+      `}</style>
     </footer>
   );
 }

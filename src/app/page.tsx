@@ -2,256 +2,339 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { ArrowRight, Sparkles, Calendar, MessageCircle } from "lucide-react";
+import { ArrowRight, Sparkles, Camera, Star } from "lucide-react";
 
 const fadeUp = {
-  initial: { opacity: 0, y: 30 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.6 },
+  initial: { opacity: 0, y: 40 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true },
+  transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] },
 };
-
-const features = [
-  {
-    icon: Sparkles,
-    title: "Custom Fit Technology",
-    description:
-      "Each set is crafted to match your unique nail shape for a perfect, seamless fit every time.",
-  },
-  {
-    icon: Calendar,
-    title: "Book a Fitting",
-    description:
-      "Visit us for a professional fitting session and get your personalized nail profile created.",
-  },
-  {
-    icon: MessageCircle,
-    title: "Expert Guidance",
-    description:
-      "Our AI-powered assistant and beauty experts are here to help you find your perfect look.",
-  },
-];
 
 const collections = [
   {
     name: "French Tips",
     description: "Timeless elegance",
-    image: "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=600&h=400&fit=crop",
+    tag: "Bestseller",
+    image: "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&h=1000&fit=crop&q=90",
   },
   {
     name: "Ombre Collection",
     description: "Gradient perfection",
-    image: "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=600&h=400&fit=crop",
+    tag: "New",
+    image: "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=800&h=1000&fit=crop&q=90",
   },
   {
     name: "Bold & Artistic",
     description: "Make a statement",
-    image: "https://images.unsplash.com/photo-1607779097040-26e80aa78e66?w=600&h=400&fit=crop",
+    tag: "Limited",
+    image: "https://images.unsplash.com/photo-1607779097040-26e80aa78e66?w=800&h=1000&fit=crop&q=90",
   },
 ];
+
+const steps = [
+  {
+    num: "01",
+    icon: Camera,
+    title: "Capture Your Nails",
+    desc: "Upload a clear photo of your hand with all 5 fingers extended. Our AI analyzes your natural nail shape.",
+  },
+  {
+    num: "02",
+    icon: Sparkles,
+    title: "AI Analysis",
+    desc: "Our vision model measures each nail's width, length, and curvature with precision — no measuring tape needed.",
+  },
+  {
+    num: "03",
+    icon: Star,
+    title: "Custom Crafted",
+    desc: "Your measurements save to your profile. Every set is sized exactly to your unique nail dimensions.",
+  },
+];
+
+const testimonials = [
+  {
+    quote: "The custom fit makes such a difference. These look and feel like they were made just for me — because they were.",
+    name: "Sarah M.",
+    role: "Loyal Customer",
+    stars: 5,
+  },
+  {
+    quote: "I've tried every press-on brand out there. Nothing compares to the quality and fit from Drip Nails & Beauty. Obsessed.",
+    name: "Jessica L.",
+    role: "Beauty Blogger",
+    stars: 5,
+  },
+  {
+    quote: "The AI fitting was mind-blowing. Zero gap, zero lift. My nails lasted three full weeks.",
+    name: "Maya R.",
+    role: "Verified Customer",
+    stars: 5,
+  },
+];
+
+const ticker = ["CUSTOM FIT", "AI-POWERED", "LUXURY PRESS-ONS", "CRAFTED FOR YOU", "DRIP NAILS & BEAUTY", "ZERO COMPROMISE", "YOUR SHAPE · YOUR STYLE"];
+
+const S: Record<string, React.CSSProperties> = {
+  gold: { color: "#c9a96e" },
+  muted: { color: "#888888" },
+  dim: { color: "#666666" },
+  dimmer: { color: "#555555" },
+  text: { color: "#f0ede8" },
+  serif: { fontFamily: "'Playfair Display', Georgia, serif" },
+  caps: { fontSize: "0.6875rem", letterSpacing: "0.25em", textTransform: "uppercase" as const },
+  btn: {
+    display: "inline-flex", alignItems: "center", gap: "0.5rem",
+    padding: "0.9rem 2rem",
+    fontSize: "0.8rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const,
+    textDecoration: "none", transition: "all 0.25s",
+  },
+};
 
 export default function HomePage() {
   return (
     <>
-      {/* Hero */}
-      <section className="relative min-h-[90vh] flex items-center bg-gradient-to-br from-gray-50 to-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20">
-          <div className="max-w-3xl">
-            <motion.p
-              {...fadeUp}
-              className="text-sm font-medium tracking-widest uppercase text-gray-500 mb-4"
-            >
-              Drip Nails & Beauty · Custom-Fit AI
-            </motion.p>
-            <motion.h1
-              {...fadeUp}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1]"
-            >
-              Beauty that fits
-              <br />
-              <span className="text-gray-400">perfectly.</span>
-            </motion.h1>
-            <motion.p
-              {...fadeUp}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="mt-6 text-lg text-gray-600 max-w-xl leading-relaxed"
-            >
-              Discover press-on nails crafted uniquely for your hands. Premium
-              quality, custom fit, delivered to your door.
-            </motion.p>
-            <motion.div
-              {...fadeUp}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              className="mt-10 flex flex-wrap gap-4"
-            >
-              <Link href="/shop">
-                <Button size="lg">
-                  Shop Collection
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/book">
-                <Button variant="outline" size="lg">
-                  Book a Fitting
-                </Button>
-              </Link>
+      {/* ── HERO ─────────────────────────────────────────── */}
+      <section style={{ minHeight: "100vh", display: "flex", alignItems: "center", position: "relative", overflow: "hidden", background: "linear-gradient(135deg, #080808 0%, #0c0c0c 100%)" }}>
+        {/* Radial gold glow */}
+        <div style={{ position: "absolute", top: "15%", right: "8%", width: "45vw", height: "45vw", maxWidth: 600, maxHeight: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,169,110,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "5rem 1.5rem", width: "100%" }}>
+          <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4rem", alignItems: "center" }}>
+
+            {/* Left: Copy */}
+            <div>
+              <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+                style={{ ...S.caps, ...S.gold, marginBottom: "1.5rem" }}>
+                Drip Nails & Beauty · AI Custom Fit
+              </motion.p>
+
+              <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.85, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+                style={{ ...S.serif, fontSize: "clamp(3rem, 7vw, 5.5rem)", fontWeight: 500, lineHeight: 1.05, ...S.text, letterSpacing: "-0.02em", marginBottom: "1.5rem" }}>
+                Beauty<br /><em style={{ ...S.gold }}>Perfected.</em>
+              </motion.h1>
+
+              <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}
+                style={{ fontSize: "1.0625rem", ...S.muted, lineHeight: 1.8, maxWidth: 460, marginBottom: "2.5rem" }}>
+                AI-powered custom-fit press-on nails, crafted precisely to your nail dimensions. No guessing. No gaps. Just flawless.
+              </motion.p>
+
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
+                style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                <Link href="/shop" style={{ ...S.btn, backgroundColor: "#c9a96e", ...S.text, color: "#080808" }}>
+                  Shop Collection <ArrowRight size={14} />
+                </Link>
+                <Link href="/custom-fit" style={{ ...S.btn, border: "1px solid #2e2e2e", ...S.text }}>
+                  Get Custom Fit
+                </Link>
+              </motion.div>
+
+              {/* Stats row */}
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.65 }}
+                style={{ display: "flex", gap: "2.5rem", marginTop: "3rem", paddingTop: "2rem", borderTop: "1px solid #1a1a1a" }}>
+                {[["500+", "Styles"], ["10k+", "Happy Clients"], ["4.9★", "Rating"]].map(([val, label]) => (
+                  <div key={label}>
+                    <p style={{ ...S.serif, fontSize: "1.5rem", fontWeight: 600, ...S.text }}>{val}</p>
+                    <p style={{ ...S.caps, fontSize: "0.6875rem", color: "#555555", marginTop: "0.2rem" }}>{label}</p>
+                  </div>
+                ))}
+              </motion.div>
+            </div>
+
+            {/* Right: Image */}
+            <motion.div className="hero-img" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              style={{ position: "relative" }}>
+              <div style={{ position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: "4/5" }}>
+                <img src="https://images.unsplash.com/photo-1604654894610-df63bc536371?w=900&h=1100&fit=crop&q=90"
+                  alt="Luxury press-on nails" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(8,8,8,0.55) 0%, transparent 55%)" }} />
+              </div>
+              {/* Floating card */}
+              <div style={{ position: "absolute", bottom: "2rem", left: "-2rem", backgroundColor: "rgba(14,14,14,0.96)", backdropFilter: "blur(20px)", border: "1px solid #252525", padding: "1.1rem 1.4rem", borderRadius: 3, minWidth: 210 }}>
+                <p style={{ ...S.caps, ...S.gold, fontSize: "0.625rem", marginBottom: "0.5rem" }}>AI Measurement</p>
+                <p style={{ fontSize: "0.875rem", ...S.text, fontWeight: 500 }}>Custom fit for every finger</p>
+                <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.3rem" }}>
+                  {["T", "I", "M", "R", "P"].map((f) => (
+                    <div key={f} style={{ width: 28, height: 28, borderRadius: "50%", backgroundColor: "#1a1a1a", border: "1px solid #2e2e2e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.625rem", color: "#888" }}>{f}</div>
+                  ))}
+                </div>
+              </div>
             </motion.div>
           </div>
         </div>
+        <style>{`
+          @media (max-width: 768px) { .hero-grid { grid-template-columns: 1fr !important; } .hero-img { display: none !important; } }
+        `}</style>
       </section>
 
-      {/* Features */}
-      <section className="py-24 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold">How Custom Fit Works</h2>
-            <p className="mt-3 text-gray-500">
-              Three simple steps to your perfect set
-            </p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-10">
-            {features.map((feature, i) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.15 }}
-                className="text-center"
-              >
-                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-                  <feature.icon className="h-6 w-6" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed">
-                  {feature.description}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+      {/* ── TICKER ───────────────────────────────────────── */}
+      <div style={{ backgroundColor: "#c9a96e", padding: "0.85rem 0", overflow: "hidden" }}>
+        <div className="animate-marquee">
+          {[...ticker, ...ticker].map((item, i) => (
+            <span key={i} style={{ paddingRight: "3rem", ...S.caps, fontSize: "0.625rem", fontWeight: 700, color: "#080808" }}>
+              {item} <span style={{ opacity: 0.4 }}>·</span>
+            </span>
+          ))}
         </div>
-      </section>
+      </div>
 
-      {/* Collections */}
-      <section className="py-24 bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex items-end justify-between mb-12">
+      {/* ── COLLECTIONS ──────────────────────────────────── */}
+      <section style={{ padding: "7rem 0", backgroundColor: "#080808" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 1.5rem" }}>
+          <motion.div {...fadeUp} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "3.5rem" }}>
             <div>
-              <h2 className="text-3xl font-bold">Featured Collections</h2>
-              <p className="mt-2 text-gray-500">Explore our curated styles</p>
+              <p style={{ ...S.caps, ...S.gold, marginBottom: "0.75rem" }}>Curated for You</p>
+              <h2 style={{ ...S.serif, fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 500, ...S.text, lineHeight: 1.1 }}>
+                Featured<br /><em>Collections</em>
+              </h2>
             </div>
-            <Link
-              href="/shop"
-              className="text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              View All <ArrowRight className="h-3 w-3" />
+            <Link href="/shop" style={{ display: "flex", alignItems: "center", gap: "0.5rem", ...S.caps, fontSize: "0.6875rem", ...S.muted, textDecoration: "none" }}>
+              View All <ArrowRight size={12} />
             </Link>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {collections.map((collection, i) => (
-              <motion.div
-                key={collection.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-              >
-                <Link href="/shop" className="group block">
-                  <div className="aspect-[3/2] bg-gray-200 rounded-2xl overflow-hidden mb-4">
-                    <img
-                      src={collection.image}
-                      alt={collection.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+          </motion.div>
+
+          <div className="col-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1.5rem" }}>
+            {collections.map((col, i) => (
+              <motion.div key={col.name} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+                transition={{ duration: 0.7, delay: i * 0.15, ease: [0.16, 1, 0.3, 1] }}>
+                <Link href="/shop" style={{ textDecoration: "none", display: "block" }}>
+                  <div style={{ position: "relative", overflow: "hidden", borderRadius: 2, aspectRatio: "3/4", backgroundColor: "#111" }}>
+                    <img src={col.image} alt={col.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.6s ease" }}
+                      onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.05)")}
+                      onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")} />
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(8,8,8,0.72) 0%, transparent 55%)" }} />
+                    <div style={{ position: "absolute", top: "1rem", left: "1rem" }}>
+                      <span style={{ backgroundColor: "#c9a96e", color: "#080808", fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", padding: "0.3rem 0.65rem" }}>{col.tag}</span>
+                    </div>
+                    <div style={{ position: "absolute", bottom: "1.5rem", left: "1.5rem" }}>
+                      <p style={{ ...S.serif, fontSize: "1.25rem", ...S.text, fontWeight: 500 }}>{col.name}</p>
+                      <p style={{ fontSize: "0.75rem", color: "rgba(240,237,232,0.55)", marginTop: "0.2rem" }}>{col.description}</p>
+                    </div>
                   </div>
-                  <h3 className="font-semibold">{collection.name}</h3>
-                  <p className="text-sm text-gray-500">
-                    {collection.description}
-                  </p>
                 </Link>
               </motion.div>
             ))}
           </div>
         </div>
+        <style>{`@media (max-width: 768px) { .col-grid { grid-template-columns: 1fr !important; } }`}</style>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-24 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold text-center mb-16">
-            What Our Clients Say
-          </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                quote:
-                  "The custom fit makes such a difference. These look and feel like they were made just for me, because they were!",
-                name: "Sarah M.",
-                role: "Loyal Customer",
-              },
-              {
-                quote:
-                  "I've tried every press-on brand out there. Nothing compares to the quality and fit from Drip Nails & Beauty.",
-                name: "Jessica L.",
-                role: "Beauty Blogger",
-              },
-              {
-                quote:
-                  "The booking process was so easy and my fitting appointment was such a fun experience. Highly recommend!",
-                name: "Maya R.",
-                role: "First-time Customer",
-              },
-            ].map((testimonial, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-gray-50 rounded-2xl p-8"
-              >
-                <p className="text-gray-600 leading-relaxed mb-6">
-                  &ldquo;{testimonial.quote}&rdquo;
+      {/* ── AI PROCESS ───────────────────────────────────── */}
+      <section style={{ padding: "7rem 0", backgroundColor: "#0d0d0d", borderTop: "1px solid #1a1a1a" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 1.5rem" }}>
+          <motion.div {...fadeUp} style={{ textAlign: "center", marginBottom: "5rem" }}>
+            <p style={{ ...S.caps, ...S.gold, marginBottom: "1rem" }}>How It Works</p>
+            <h2 style={{ ...S.serif, fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 500, ...S.text }}>
+              AI-Powered <em>Custom Fit</em>
+            </h2>
+            <p style={{ ...S.dim, marginTop: "1rem", maxWidth: 440, margin: "1rem auto 0", fontSize: "0.9375rem", lineHeight: 1.75 }}>
+              Three steps to nails that were made — precisely — for you.
+            </p>
+          </motion.div>
+
+          <div className="steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, backgroundColor: "#1a1a1a" }}>
+            {steps.map((step, i) => (
+              <motion.div key={step.num} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+                transition={{ duration: 0.65, delay: i * 0.15 }}
+                style={{ backgroundColor: "#0d0d0d", padding: "3rem 2.5rem" }}>
+                <p style={{ ...S.serif, fontSize: "3.5rem", fontWeight: 400, color: "#1d1d1d", lineHeight: 1, marginBottom: "1.5rem" }}>{step.num}</p>
+                <step.icon size={22} color="#c9a96e" style={{ marginBottom: "1rem" }} />
+                <h3 style={{ fontSize: "1.0625rem", fontWeight: 500, ...S.text, marginBottom: "0.75rem" }}>{step.title}</h3>
+                <p style={{ fontSize: "0.875rem", color: "#5e5e5e", lineHeight: 1.8 }}>{step.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+        <style>{`@media (max-width: 768px) { .steps-grid { grid-template-columns: 1fr !important; } }`}</style>
+      </section>
+
+      {/* ── EDITORIAL SPLIT ──────────────────────────────── */}
+      <section style={{ backgroundColor: "#080808" }}>
+        <div className="split-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          {/* Image */}
+          <div style={{ position: "relative", minHeight: 620, overflow: "hidden" }}>
+            <img src="https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=900&h=1100&fit=crop&q=90"
+              alt="Ombre Collection" style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
+            <div style={{ position: "absolute", inset: 0, background: "rgba(8,8,8,0.25)" }} />
+          </div>
+          {/* Copy */}
+          <motion.div {...fadeUp} style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "5rem 4rem", backgroundColor: "#0d0d0d" }}>
+            <p style={{ ...S.caps, ...S.gold, marginBottom: "1.5rem" }}>The Difference</p>
+            <h2 style={{ ...S.serif, fontSize: "clamp(1.75rem, 3.5vw, 2.75rem)", fontWeight: 500, ...S.text, lineHeight: 1.15, marginBottom: "1.5rem" }}>
+              Not just beautiful.<br /><em>Perfectly yours.</em>
+            </h2>
+            <p style={{ fontSize: "0.9375rem", ...S.dim, lineHeight: 1.9, marginBottom: "1.25rem" }}>
+              Every DNNB set begins with your measurements. Our AI maps your nail bed&apos;s exact geometry — width, length, curvature — across all five fingers. The result? A set that sits flush, lifts zero, and lasts weeks.
+            </p>
+            <p style={{ fontSize: "0.9375rem", ...S.dim, lineHeight: 1.9, marginBottom: "2.5rem" }}>
+              This isn&apos;t a sizing chart. It&apos;s technology built for beauty.
+            </p>
+            <Link href="/custom-fit" style={{ display: "inline-flex", alignItems: "center", gap: "0.75rem", ...S.caps, fontSize: "0.75rem", fontWeight: 600, ...S.gold, textDecoration: "none", paddingBottom: "0.3rem", borderBottom: "1px solid #c9a96e", width: "fit-content" }}>
+              Get Your Custom Fit <ArrowRight size={12} />
+            </Link>
+          </motion.div>
+        </div>
+        <style>{`@media (max-width: 768px) { .split-grid { grid-template-columns: 1fr !important; } }`}</style>
+      </section>
+
+      {/* ── TESTIMONIALS ─────────────────────────────────── */}
+      <section style={{ padding: "7rem 0", backgroundColor: "#080808", borderTop: "1px solid #1a1a1a" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 1.5rem" }}>
+          <motion.div {...fadeUp} style={{ textAlign: "center", marginBottom: "4rem" }}>
+            <p style={{ ...S.caps, ...S.gold, marginBottom: "1rem" }}>Client Love</p>
+            <h2 style={{ ...S.serif, fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 500, ...S.text }}>
+              What They&apos;re <em>Saying</em>
+            </h2>
+          </motion.div>
+
+          <div className="reviews-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1.5rem" }}>
+            {testimonials.map((t, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: i * 0.12 }}
+                style={{ backgroundColor: "#0f0f0f", border: "1px solid #1e1e1e", padding: "2.5rem" }}>
+                <div style={{ display: "flex", gap: 3, marginBottom: "1.5rem" }}>
+                  {Array.from({ length: t.stars }).map((_, j) => (
+                    <Star key={j} size={13} fill="#c9a96e" color="#c9a96e" />
+                  ))}
+                </div>
+                <p style={{ ...S.serif, fontSize: "1rem", fontStyle: "italic", color: "#ccc8c0", lineHeight: 1.85, marginBottom: "1.5rem" }}>
+                  &ldquo;{t.quote}&rdquo;
                 </p>
-                <div>
-                  <p className="font-semibold text-sm">{testimonial.name}</p>
-                  <p className="text-xs text-gray-400">{testimonial.role}</p>
+                <div style={{ borderTop: "1px solid #1e1e1e", paddingTop: "1.25rem" }}>
+                  <p style={{ fontSize: "0.8125rem", fontWeight: 500, ...S.text }}>{t.name}</p>
+                  <p style={{ fontSize: "0.75rem", color: "#555555", marginTop: "0.2rem" }}>{t.role}</p>
                 </div>
               </motion.div>
             ))}
           </div>
         </div>
+        <style>{`@media (max-width: 768px) { .reviews-grid { grid-template-columns: 1fr !important; } }`}</style>
       </section>
 
-      {/* CTA */}
-      <section className="py-24 bg-black text-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            Ready for your perfect fit?
-          </h2>
-          <p className="text-gray-400 mb-10 max-w-md mx-auto">
-            Shop our collection or book a custom fitting session today.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            <Link href="/shop">
-              <Button
-                size="lg"
-                className="bg-white text-black hover:bg-gray-100"
-              >
-                Shop Now
-              </Button>
-            </Link>
-            <Link href="/book">
-              <Button
-                variant="outline"
-                size="lg"
-                className="border-white text-white hover:bg-white hover:text-black"
-              >
+      {/* ── FINAL CTA ────────────────────────────────────── */}
+      <section style={{ position: "relative", overflow: "hidden", padding: "8rem 0", background: "linear-gradient(160deg, #0a0a08 0%, #0d0d0a 100%)", borderTop: "1px solid #1a1a1a" }}>
+        {/* Glow */}
+        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "60vw", height: "60vh", borderRadius: "50%", background: "radial-gradient(circle, rgba(201,169,110,0.09) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 1.5rem", textAlign: "center", position: "relative" }}>
+          <motion.div {...fadeUp}>
+            <p style={{ ...S.caps, ...S.gold, marginBottom: "1.5rem" }}>Ready?</p>
+            <h2 style={{ ...S.serif, fontSize: "clamp(2.25rem, 5vw, 4rem)", fontWeight: 500, ...S.text, lineHeight: 1.1, marginBottom: "1.5rem" }}>
+              Your perfect nails<br /><em>are one click away.</em>
+            </h2>
+            <p style={{ fontSize: "1rem", ...S.dim, lineHeight: 1.8, maxWidth: 460, margin: "0 auto 2.75rem" }}>
+              Shop our collection or start your AI custom fitting today. Beauty this precise shouldn&apos;t be this easy — but it is.
+            </p>
+            <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+              <Link href="/shop" style={{ ...S.btn, backgroundColor: "#c9a96e", color: "#080808" }}>
+                Shop Now <ArrowRight size={14} />
+              </Link>
+              <Link href="/book" style={{ ...S.btn, border: "1px solid #2e2e2e", ...S.text }}>
                 Book Appointment
-              </Button>
-            </Link>
-          </div>
+              </Link>
+            </div>
+          </motion.div>
         </div>
       </section>
     </>
