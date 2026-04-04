@@ -16,9 +16,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Salon | Premium Custom-Fit Press-On Nails",
+  title: "Drip Nails & Beauty | Premium Custom-Fit Press-On Nails",
   description:
-    "Premium custom-fit press-on nails crafted for your unique style. Shop our collection, book a fitting, or chat with our beauty experts.",
+    "Drip Nails & Beauty (DNNB) — AI-powered custom-fit press-on nails crafted for your unique nail shape. Shop our collection, book a fitting, or chat with our beauty experts.",
+  keywords: "custom fit press on nails, nail fitting, beauty salon, DNNB, Drip Nails",
+  openGraph: {
+    title: "Drip Nails & Beauty | Custom-Fit Press-On Nails",
+    description: "AI-powered custom-fit press-on nails crafted for your unique nail shape.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

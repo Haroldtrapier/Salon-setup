@@ -13,7 +13,7 @@ export function ChatWidget() {
     {
       role: "assistant",
       content:
-        "Hi! Welcome to Salon. I can help you find the perfect nail set, book an appointment, or answer any questions. How can I help?",
+        "Hi! Welcome to Drip Nails & Beauty 💅 I'm Nova, your beauty assistant. I can help you find the perfect nail set, book an appointment, or answer any questions. How can I help?",
       timestamp: new Date(),
     },
   ]);
@@ -76,7 +76,7 @@ export function ChatWidget() {
           >
             <div className="bg-black text-white px-5 py-4 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-sm">Salon Assistant</h3>
+                <h3 className="font-semibold text-sm">Nova · DNNB Assistant</h3>
                 <p className="text-xs text-gray-300">Online</p>
               </div>
               <button onClick={() => setIsOpen(false)}>

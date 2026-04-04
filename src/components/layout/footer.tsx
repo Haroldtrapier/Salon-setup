@@ -25,10 +25,11 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
           <div>
-            <h3 className="text-lg font-bold tracking-tight mb-4">SALON</h3>
+            <h3 className="text-lg font-bold tracking-tight mb-4">DNNB</h3>
+            <p className="text-xs text-gray-500 mb-1">Drip Nails & Beauty</p>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Premium custom-fit press-on nails crafted for your unique style.
-              Beauty, redefined.
+              Premium custom-fit press-on nails crafted for your unique nail shape.
+              AI-powered beauty, redefined.
             </p>
           </div>
 
@@ -55,7 +56,7 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t border-gray-800 text-center">
           <p className="text-sm text-gray-500">
-            &copy; {new Date().getFullYear()} Salon. All rights reserved.
+            &copy; {new Date().getFullYear()} Drip Nails & Beauty (DNNB) — Flax Enterprises LLC. All rights reserved.
           </p>
         </div>
       </div>

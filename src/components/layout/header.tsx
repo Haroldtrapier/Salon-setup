@@ -27,7 +27,7 @@ export function Header() {
             href="/"
             className="text-xl font-bold tracking-tight"
           >
-            SALON
+            DNNB
           </Link>
 
           <div className="hidden md:flex items-center gap-8">

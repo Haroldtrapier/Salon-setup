@@ -61,7 +61,7 @@ export default function HomePage() {
               {...fadeUp}
               className="text-sm font-medium tracking-widest uppercase text-gray-500 mb-4"
             >
-              Premium Custom-Fit Nails
+              Drip Nails & Beauty · Custom-Fit AI
             </motion.p>
             <motion.h1
               {...fadeUp}
@@ -192,7 +192,7 @@ export default function HomePage() {
               },
               {
                 quote:
-                  "I've tried every press-on brand out there. Nothing compares to the quality and fit from Salon.",
+                  "I've tried every press-on brand out there. Nothing compares to the quality and fit from Drip Nails & Beauty.",
                 name: "Jessica L.",
                 role: "Beauty Blogger",
               },
